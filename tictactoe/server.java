@@ -1,3 +1,4 @@
+package tictactoe;
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -7,33 +8,16 @@ class gameData{
     int board[]=new int[]{0,0,0,0,0,0,0,0,0}; 
     int cp=0;
     String left=null;
-    // gameData(int x_,int y_){
-    //     x=x_;
-    //     y=y_;
-    // }
+    int keepAlive=-1;
 
     boolean addP(Socket p){
-        if(y==null){
-            y=p;
-        }else if(x==null){
-            x=p;
-        }else{
-            return false;
-        }
+        if(y==null) y=p;
+        else if(x==null) x=p;
+        else return false;
 
-        if(x!=null && y!=null){
-            cp=1;
-        }
+        if(x!=null && y!=null) cp=1;
         return true;
     }
-    // 036 -1
-    // 012 -2
-    // 048 -3
-    // 147 -4
-    // 258 -5
-    // 246 -6
-    // 345 -7
-    // 678 -8
     int check(){
         if(board[0]==board[3] && board[3]==board[6] && board[6]!=0) return 1*10+board[6];
         if(board[0]==board[1] && board[1]==board[2] && board[2]!=0) return 2*10+board[2];
@@ -50,17 +34,13 @@ class gameData{
     }
     String update(int ind,Socket p){
         int t=0;
-        if(p==x){
-            t=1;
-        }else if(p==y){
-            t=2;
-        }else{
-            return "f2";
-        }
+        if(p==x) t=1;
+        else if(p==y) t=2;
+        else return "f2";
+        
         if(cp==0) return "f1";
-        if(ind<0 || ind>8 || cp!=t ||board[ind]!=0){
-            return "f2";
-        }
+        if(ind<0 || ind>8 || cp!=t ||board[ind]!=0) return "f2";
+
         board[ind]=t;
         cp=(cp==1)?2:1;
         return stats();
@@ -68,9 +48,7 @@ class gameData{
 
     String parseBoard(){
         String s="";
-        for(int i=0;i<9;i++){
-            s+=board[i];
-        }
+        for(int i=0;i<9;i++) s+=board[i];
         return s;
     }
 
@@ -82,9 +60,7 @@ class gameData{
     }
 
     void reset(){
-        for(int i=0;i<9;i++){
-            board[i]=0;
-        }
+        for(int i=0;i<9;i++) board[i]=0;
         Socket temp=x;
         x=y;
         y=temp;
@@ -93,27 +69,16 @@ class gameData{
 }
 class Server{
     public static void main(String[] args){
-        Server a =new Server();
-        // gameData g=new gameData();
-        // g.addP(1, 1);
-        // System.out.println(g.update(0, 1));
-        // g.addP(2, 2);
-        // System.out.println(g.update(0, 1));
-        // System.out.println(g.update(4, 2));
-        // System.out.println(g.update(6, 1));
-        // System.out.println(g.update(5, 2));
-        // System.out.println(g.update(3, 1));
-        // System.out.println(g.parseBoard());
-        // g.reset();
-        // System.out.println(g.stats());
+        Server a =new Server(); 
         a.doConnections();
-        
     }
     public void doConnections(){
         try{
             ServerSocket server=new ServerSocket(4069);
             HandleCallThread msgrouterThread=new HandleCallThread();
             msgrouterThread.start();
+            KeepAliveThread kt=new KeepAliveThread(msgrouterThread);
+            kt.start();
             while(true){
                 Socket client=server.accept();
                 if(client!=null){
@@ -134,9 +99,7 @@ class HandleCallThread extends Thread{
     public HashMap<String,Socket> clientList=new HashMap<String,Socket>();
     public DataInputStream is=null;
     public DataOutputStream os=null;
-
-    HashMap<Integer,gameData> rooms=new HashMap<Integer,gameData>();
-    
+    public HashMap<Integer,gameData> rooms=new HashMap<Integer,gameData>();
     int globalRoomId=1000;
 
     public void run(){
@@ -184,22 +147,21 @@ class HandleCallThread extends Thread{
                 }
                 Thread.sleep(1);
             }catch(Exception e){
-                System.out.println(e.getMessage());
+                // System.out.println(e.getMessage());
             }
         }
     }
 
     void start_(Socket p,int rid) throws IOException{
         gameData g=rooms.get(rid);
+        if(g==null) return;
         if(g.x==null || g.y==null){
-            // if(g.left!=null){
-            //     send(p,"pel"+g.left,rid);
-            // }else
-                send(p,"pen",rid);
+            send(p,"pen",rid);
             return;
         }
         g.reset();
         String res_=g.stats();
+        g.keepAlive=0;
         sendBoth(g, "stg",rid);
         sendBoth(g, res_.substring(0,9),rid);
         send(g.x,"yc",rid);
@@ -218,16 +180,28 @@ class HandleCallThread extends Thread{
             }
         }catch(Exception e){
             if(e.getMessage().equals("Connection reset by peer")){
+                if(g.x!=null) send(g.x,"rec",rid);
+                if(g.y!=null) send(g.y,"rec",rid);
                 rooms.remove(rid);
             }
         }
     }
     void send(Socket p,String data,int rid) throws IOException{
+        if(p==null) return;
         try{
             DataOutputStream os=new DataOutputStream(p.getOutputStream());
             os.writeUTF(data);
         }catch(Exception e){
             if(e.getMessage().equals("Connection reset by peer")){
+                gameData g=rooms.get(rid);
+                if(g.x!=p){
+                    g.y=null;
+                    send(g.x,"rec",rid);
+                }
+                else if(g.y!=p){
+                    g.x=null;
+                    send(g.y,"rec",rid);
+                }
                 rooms.remove(rid);
             }
         }
@@ -237,7 +211,6 @@ class HandleCallThread extends Thread{
         gameData g=new gameData();
         g.addP(p);
         rooms.put(globalRoomId, g);
-        //send to socket room,ridID
         String res="rmid"+globalRoomId;
         System.out.println(res);
         send(p,res,0);
@@ -261,23 +234,26 @@ class HandleCallThread extends Thread{
         gameData g=rooms.get(rid);
         sendBoth(g,"rc",rid);
         rooms.remove(rid);
+        g.keepAlive=-1;
     }
     void exitRoom(Socket p,int rid,String n) throws IOException{
-         gameData g=rooms.get(rid);
-         if(g==null) return;
-         if(g.x==p){
+        gameData g=rooms.get(rid);
+        if(g==null) return;
+        if(g.x==p){
             g.x=null;
-         }else if(g.y==p){
+        }else if(g.y==p){
             g.y=g.x;
             g.x=null;
-         }
-         g.left=n;
-         g.cp=0;
-         send(g.y,"pel"+n,rid);
-         System.out.println(n+" left");
+        }
+        g.left=n;
+        g.cp=0;
+        send(g.y,"pel"+n,rid);
+        System.out.println(n+" left");
+        g.keepAlive=-1;
     }
     void move(Socket p,int m,int rid) throws IOException{
         gameData g=rooms.get(rid);
+        if(g.keepAlive==-1){return;}
         String res=g.update(m, p);
         if(res.equals("f1")){
             send(p, "Game not started yet",rid);
@@ -288,20 +264,22 @@ class HandleCallThread extends Thread{
             send(p, "yc",rid);
             return;
         }
+        g.keepAlive=0;
         String r[]=res.split("[|]");
         sendBoth(g, "gb"+r[0],rid);
 
         if(r[1].equals("-1")==false){
             if(r[1].charAt(1)=='1'){
-                send(g.x,"yw"+r[0]+r[1].charAt(0),rid);
-                send(g.y,"yl"+r[0]+r[1].charAt(0),rid);
+                send(g.x,"yw"+r[0],rid);
+                send(g.y,"yl"+r[0],rid);
             }else if(r[1].charAt(1)=='2'){
-                send(g.x,"yl"+r[0]+r[1].charAt(0),rid);
-                send(g.y,"yw"+r[0]+r[1].charAt(0),rid);
+                send(g.x,"yl"+r[0],rid);
+                send(g.y,"yw"+r[0],rid);
             }else{
                 send(g.x,"d"+r[0],rid);
                 send(g.y,"d"+r[0],rid);
             }
+            g.keepAlive=-1;
             return;
         }
         if(r[2].equals("1"))
@@ -313,3 +291,27 @@ class HandleCallThread extends Thread{
 
 }
 
+class KeepAliveThread extends Thread{
+    HandleCallThread ht;
+    KeepAliveThread(HandleCallThread h){ ht=h; }
+    public void run(){
+        while (true) {
+            for(int r:ht.rooms.keySet()){
+                gameData g=ht.rooms.get(r);
+                // System.out.println(g.keepAlive);
+                if(g.keepAlive!=-1){
+                    if(g.keepAlive==30){
+                        try{
+                            ht.sendBoth(g, "rec", r);
+                            ht.rooms.remove(r);
+                            continue;
+                        }catch(Exception e){}
+                    }
+                    g.keepAlive+=1;
+                }
+            }
+            try{ Thread.sleep(1000); }
+            catch(Exception e){}
+        }
+    }
+}
